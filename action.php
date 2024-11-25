@@ -10,6 +10,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'upload') {
         $fileSize = $_FILES['csvFile']['size'];
         $fileType = $_FILES['csvFile']['type'];
 
+        if (!file_exists('uploads')) {
+            mkdir('uploads', 0777, true);
+        }
+
         $destination = "./uploads/" . $fileName;
 
         // Validate file type
