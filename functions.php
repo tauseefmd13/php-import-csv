@@ -3,7 +3,7 @@
 function importCSVDataInChuncks($pdo, $filePath, $batchSize = 1000)
 {
 	if (($handle = fopen($filePath, 'r')) !== false) {
-		$files = [];
+		$data = [];
 	    $rowCount = 0;
 	    $batchCount = 0;
 
@@ -21,30 +21,18 @@ function importCSVDataInChuncks($pdo, $filePath, $batchSize = 1000)
 	            $row[1] = date("Y-m-d", strtotime($row[1]));
 	        }
 
-	        $tempPath = './uploads/files-'.$batchCount.'.csv';
-
-	        // Splitting the CSV file:
-	        if ($batchCount % $batchSize == 0) {
-	            $file = fopen($tempPath, "w");
-	        }
-
-	        // Prepare data for writing to batch file (include selected columns)
-	        $string = implode(',', [$row[1], $row[2], $row[3], $row[4], $row[5], $row[6], $row[7], $row[8], $row[9], $row[10], $row[11], $row[12], $row[13], $row[14], $row[15], $row[16], $row[17], $row[18], $row[19], $row[20], $row[21], $row[22], $row[23], $row[24], $row[25]]);
-	        fwrite($file, $string . PHP_EOL);
-
-	        // Process the batch file
-	        if ($batchCount % $batchSize == 0) {
-	            $files[] = $tempPath;
-	        }
-
+	        $data[] = [$row[1], $row[2], $row[3], $row[4], $row[5], $row[6], $row[7], $row[8], $row[9], $row[10], $row[11], $row[12], $row[13], $row[14], $row[15], $row[16], $row[17], $row[18], $row[19], $row[20], $row[21], $row[22], $row[23], $row[24], $row[25]];
 	        $rowCount++;
 	        $batchCount++;
+
+	        if ($batchCount % $batchSize == 0) {
+	            insertBatch($pdo, $data);
+		        $data = []; // Clear data
+	        }
 	    }
 
-	    saveCSVDataInDatabase($pdo, $files, $batchSize);
-
-	    if (isset($file)) {
-	        fclose($file); // Close the last batch file
+	    if (count($data)) {
+	        insertBatch($pdo, $data);
 	    }
 
 	    fclose($handle);
@@ -53,34 +41,6 @@ function importCSVDataInChuncks($pdo, $filePath, $batchSize = 1000)
 	}
 
 	return 'Unable to process the CSV file.';
-}
-
-function saveCSVDataInDatabase($pdo, $files, $batchSize = 1000)
-{
-	foreach ($files as $filePath) {
-		$data = [];
-		$rowCount = 0;
-
-		if (($handle = fopen($filePath, "r")) !== false) {
-		    while (($row = fgetcsv($handle)) !== false) {
-		    	set_time_limit(0);
-
-		        $data[] = $row;
-		        $rowCount++;
-
-		        if ($rowCount % $batchSize === 0) {
-		            insertBatch($pdo, $data);
-		            $data = []; // Clear data
-		        }
-		    }
-		    if (count($data)) {
-		        insertBatch($pdo, $data);
-		    }
-		    fclose($handle);
-		}
-
-		@unlink($filePath);
-	}
 }
 
 function insertBatch($pdo, $data) 
