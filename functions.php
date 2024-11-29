@@ -21,6 +21,11 @@ function importCSVDataInChuncks($pdo, $filePath, $batchSize = 1000)
 	            $row[1] = date("Y-m-d", strtotime($row[1]));
 	        }
 
+	        // Modify the receipt column (assume receipt is in the 15th column, index 16)
+	        if (is_numeric($row[15])) {
+	            $row[15] = (int) $row[15];
+	        }
+
 	        $data[] = [$row[1], $row[2], $row[3], $row[4], $row[5], $row[6], $row[7], $row[8], $row[9], $row[10], $row[11], $row[12], $row[13], $row[14], $row[15], $row[16], $row[17], $row[18], $row[19], $row[20], $row[21], $row[22], $row[23], $row[24], $row[25]];
 	        $rowCount++;
 	        $batchCount++;
