@@ -252,12 +252,12 @@ if ($count_financial_trans == 0) {
         SELECT * FROM cte_financial_trans;
     ");
 
-	$financial_trans = $pdo->query("SELECT m.date, m.academic_year, m.voucher_type, m.voucher_number, m.admission_number, SUM(m.due_amount) AS total_due_amount, SUM(m.concession_amount) AS total_concession_amount, SUM(m.scholarship_amount) AS total_scholarship_amount, SUM(m.reverse_concession_amount) AS total_reverse_concession_amount, SUM(m.write_off_amount) AS total_write_off_amount, e.crdr, e.entry_mode_number, 
-		CASE WHEN m.voucher_type = 'CONCESSION' THEN 1 WHEN m.voucher_type = 'SCHOLARSHIP' THEN 2 ELSE NULL 
-		END AS type_of_concession 
-		FROM temp_financial_trans m 
-		JOIN entry_mode e ON e.entry_mode_name = m.voucher_type 
-		GROUP BY m.voucher_number, m.date, m.admission_number")->fetchAll(PDO::FETCH_ASSOC);
+	$due_financial_trans = $pdo->query("SELECT m.date, m.academic_year, m.voucher_type, m.voucher_number, m.admission_number, SUM(m.due_amount) AS amount, e.crdr, e.entry_mode_number FROM temp_financial_trans m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'DUE' GROUP BY m.voucher_number, m.date, m.admission_number")->fetchAll(PDO::FETCH_ASSOC);
+	$revdue_financial_trans = $pdo->query("SELECT m.date, m.academic_year, m.voucher_type, m.voucher_number, m.admission_number, SUM(m.write_off_amount) AS amount, e.crdr, e.entry_mode_number FROM temp_financial_trans m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'REVDUE' GROUP BY m.voucher_number, m.date, m.admission_number")->fetchAll(PDO::FETCH_ASSOC);
+	$scholarship_financial_trans = $pdo->query("SELECT m.date, m.academic_year, m.voucher_type, m.voucher_number, m.admission_number, SUM(m.scholarship_amount) AS amount, e.crdr, e.entry_mode_number FROM temp_financial_trans m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'SCHOLARSHIP' GROUP BY m.voucher_number, m.date, m.admission_number")->fetchAll(PDO::FETCH_ASSOC);
+	$revscholarship_financial_trans = $pdo->query("SELECT m.date, m.academic_year, m.voucher_type, m.voucher_number, m.admission_number, SUM(m.reverse_concession_amount) AS amount, e.crdr, e.entry_mode_number FROM temp_financial_trans m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'SCHOLARSHIPREV/REVCONCESSION' GROUP BY m.voucher_number, m.date, m.admission_number")->fetchAll(PDO::FETCH_ASSOC);
+	$consession_financial_trans = $pdo->query("SELECT m.date, m.academic_year, m.voucher_type, m.voucher_number, m.admission_number, SUM(m.concession_amount) AS amount, e.crdr, e.entry_mode_number FROM temp_financial_trans m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'CONCESSION' GROUP BY m.voucher_number, m.date, m.admission_number")->fetchAll(PDO::FETCH_ASSOC);
+	$financial_trans = array_merge($due_financial_trans, $revdue_financial_trans, $scholarship_financial_trans, $revscholarship_financial_trans, $consession_financial_trans);
 
 	if (!empty($financial_trans)) {
 		$module_id = 1;
@@ -267,9 +267,15 @@ if ($count_financial_trans == 0) {
 			$values = [];
 
 			foreach ($chunks as $data) {
-				$amount = array_sum([$data['total_due_amount'], $data['total_concession_amount'], $data['total_scholarship_amount'], $data['total_reverse_concession_amount'], $data['total_write_off_amount']]);
+				if ($data['voucher_type'] == 'CONCESSION') {
+					$type_of_concession = 1;
+				} elseif ($data['voucher_type'] == 'SCHOLARSHIP') {
+					$type_of_concession = 2;
+				} else {
+					$type_of_concession = null;
+				}
 
-				$values[] = "('" . $module_id . "', '" . rand(100000, 999999) . "', '" . $data['admission_number'] . "', '" . $amount . "', '" . $data['crdr'] . "', '" . $data['date'] . "', '" . $data['academic_year'] . "', '" . $data['entry_mode_number'] . "', '" . $data['voucher_number'] . "', '" . $branch_id . "', '" . $data['type_of_concession'] . "')";
+				$values[] = "('" . $module_id . "', '" . rand(100000, 999999) . "', '" . $data['admission_number'] . "', '" . $data['amount'] . "', '" . $data['crdr'] . "', '" . $data['date'] . "', '" . $data['academic_year'] . "', '" . $data['entry_mode_number'] . "', '" . $data['voucher_number'] . "', '" . $branch_id . "', '" . $type_of_concession . "')";
 			}
 
 			$pdo->exec("INSERT INTO `financial_trans` (`module_id`, `trans_id`, `admission_number`, `amount`, `crdr`, `trans_date`, `academic_year`, `entry_mode`, `voucher_number`, `branch_id`, `type_of_concession`) VALUES " . implode(',', $values));
@@ -306,7 +312,19 @@ if ($count_financial_trans == 0) {
 	            		$head_id = null;
 	            	}
 
-	            	$amount = array_sum([$data['due_amount'], $data['concession_amount'], $data['scholarship_amount'], $data['reverse_concession_amount'], $data['write_off_amount']]);
+	            	if ($data['voucher_type'] == 'DUE') {
+	            		$amount = $data['due_amount'];
+	            	} elseif ($data['voucher_type'] == 'REVDUE') {
+	            		$amount = $data['write_off_amount'];
+	            	} elseif ($data['voucher_type'] == 'SCHOLARSHIP') {
+	            		$amount = $data['scholarship_amount'];
+	            	} elseif ($data['voucher_type'] == 'SCHOLARSHIPREV/REVCONCESSION') {
+	            		$amount = $data['reverse_concession_amount'];
+	            	} elseif ($data['voucher_type'] == 'CONCESSION') {
+	            		$amount = $data['concession_amount'];
+	            	} else {
+	            		$amount = 0;
+	            	}
 
 					$values[] = "('" . $financial_trans_id . "', '" . $module_id . "', '" . $amount . "', '" . $head_id . "',  '" . $data['crdr'] . "', '" . $branch_id . "', '" . $data['fee_head'] . "')";
 	            }
@@ -321,6 +339,7 @@ if ($count_financial_trans == 0) {
 // Common Fee Collection
 $count_common_fee_collection = $pdo->query("SELECT COUNT(id) AS total FROM common_fee_collection")->fetch(PDO::FETCH_ASSOC)['total'];
 if ($count_common_fee_collection == 0) {
+	$pdo->exec("DROP TEMPORARY TABLE IF EXISTS temp_common_fee_collection");
 	$pdo->exec("
         CREATE TEMPORARY TABLE temp_common_fee_collection AS
         WITH cte_common_fee_collection AS (
@@ -331,12 +350,14 @@ if ($count_common_fee_collection == 0) {
         SELECT * FROM cte_common_fee_collection;
     ");
 
-	$common_fee_collections = $pdo->query("SELECT m.date, m.academic_year, m.session, m.voucher_type, m.voucher_number, m.roll_number, m.admission_number, m.receipt_number, SUM(m.paid_amount) AS total_paid_amount, SUM(m.adjusted_amount) AS total_adjusted_amount, SUM(m.refund_amount) AS total_refund_amount, SUM(m.fund_transfer_amount) AS total_fund_transfer_amount, e.entry_mode_number, 
-		CASE WHEN e.entry_mode_name = 'RCPT' THEN 0 WHEN e.entry_mode_name = 'REVRCPT' THEN 1 WHEN e.entry_mode_name = 'JV' THEN 0 WHEN e.entry_mode_name = 'REVJV' THEN 1 WHEN e.entry_mode_name = 'PMT' THEN 0 WHEN e.entry_mode_name = 'REVPMT' THEN 1 ELSE NULL 
-		END AS inactive 
-		FROM temp_common_fee_collection m 
-		JOIN entry_mode e ON e.entry_mode_name = m.voucher_type
-		GROUP BY m.receipt_number, m.admission_number, m.roll_number, m.date")->fetchAll(PDO::FETCH_ASSOC);
+	$paid_common_fee_collections = $pdo->query("SELECT m.date, m.academic_year, m.session, m.voucher_type, m.voucher_number, m.roll_number, m.admission_number, m.receipt_number, SUM(m.paid_amount) AS amount, e.entry_mode_number FROM temp_common_fee_collection m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'RCPT' GROUP BY m.receipt_number, m.admission_number, m.roll_number, m.date")->fetchAll(PDO::FETCH_ASSOC);
+	$rev_paid_common_fee_collections = $pdo->query("SELECT m.date, m.academic_year, m.session, m.voucher_type, m.voucher_number, m.roll_number, m.admission_number, m.receipt_number, SUM(m.paid_amount) AS amount, e.entry_mode_number FROM temp_common_fee_collection m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'REVRCPT' GROUP BY m.receipt_number, m.admission_number, m.roll_number, m.date")->fetchAll(PDO::FETCH_ASSOC);
+	$adjusted_common_fee_collections = $pdo->query("SELECT m.date, m.academic_year, m.session, m.voucher_type, m.voucher_number, m.roll_number, m.admission_number, m.receipt_number, SUM(m.adjusted_amount) AS amount, e.entry_mode_number FROM temp_common_fee_collection m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'JV' GROUP BY m.receipt_number, m.admission_number, m.roll_number, m.date")->fetchAll(PDO::FETCH_ASSOC);
+	$rev_adjusted_common_fee_collections = $pdo->query("SELECT m.date, m.academic_year, m.session, m.voucher_type, m.voucher_number, m.roll_number, m.admission_number, m.receipt_number, SUM(m.adjusted_amount) AS amount, e.entry_mode_number FROM temp_common_fee_collection m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'REVJV' GROUP BY m.receipt_number, m.admission_number, m.roll_number, m.date")->fetchAll(PDO::FETCH_ASSOC);
+	$refund_common_fee_collections = $pdo->query("SELECT m.date, m.academic_year, m.session, m.voucher_type, m.voucher_number, m.roll_number, m.admission_number, m.receipt_number, SUM(m.refund_amount) AS amount, e.entry_mode_number FROM temp_common_fee_collection m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'PMT' GROUP BY m.receipt_number, m.admission_number, m.roll_number, m.date")->fetchAll(PDO::FETCH_ASSOC);
+	$rev_refund_common_fee_collections = $pdo->query("SELECT m.date, m.academic_year, m.session, m.voucher_type, m.voucher_number, m.roll_number, m.admission_number, m.receipt_number, SUM(m.refund_amount) AS amount, e.entry_mode_number FROM temp_common_fee_collection m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'REVPMT' GROUP BY m.receipt_number, m.admission_number, m.roll_number, m.date")->fetchAll(PDO::FETCH_ASSOC);
+	$fund_common_fee_collections = $pdo->query("SELECT m.date, m.academic_year, m.session, m.voucher_type, m.voucher_number, m.roll_number, m.admission_number, m.receipt_number, SUM(m.fund_transfer_amount) AS amount, e.entry_mode_number FROM temp_common_fee_collection m JOIN entry_mode e ON e.entry_mode_name = m.voucher_type WHERE m.voucher_type = 'Fundtransfer' GROUP BY m.receipt_number, m.admission_number, m.roll_number, m.date")->fetchAll(PDO::FETCH_ASSOC);
+	$common_fee_collections = array_merge($paid_common_fee_collections, $rev_paid_common_fee_collections, $adjusted_common_fee_collections, $rev_adjusted_common_fee_collections, $refund_common_fee_collections, $rev_refund_common_fee_collections, $fund_common_fee_collections);
 
 	if (!empty($common_fee_collections)) {
 		$module_id = 1;
@@ -346,9 +367,23 @@ if ($count_common_fee_collection == 0) {
 			$values = [];
 
 			foreach ($chunks as $data) {
-				$amount = array_sum([$data['total_paid_amount'], $data['total_adjusted_amount'], $data['total_refund_amount'], $data['total_fund_transfer_amount']]);
+				if ($data['voucher_type'] == 'RCPT') {
+            		$inactive = 0;
+            	} elseif ($data['voucher_type'] == 'REVRCPT') {
+            		$inactive = 1;
+            	} elseif ($data['voucher_type'] == 'JV') {
+            		$inactive = 0;
+            	} elseif ($data['voucher_type'] == 'REVJV') {
+            		$inactive = 1;
+            	} elseif ($data['voucher_type'] == 'PMT') {
+            		$inactive = 0;
+            	} elseif ($data['voucher_type'] == 'REVPMT') {
+            		$inactive = 1;
+            	} else {
+            		$inactive = null;
+            	}
 
-				$values[] = "('" . $module_id . "', '" . rand(100000, 999999) . "', '" . $data['admission_number'] . "', '" . $data['roll_number'] . "', '" . $amount . "', '" . $branch_id . "', '" . $data['academic_year'] . "', '" . $data['session'] . "', '" . $data['receipt_number'] . "', '" . $data['entry_mode_number'] . "', '" . $data['date'] . "', '" . $data['inactive'] . "')";
+				$values[] = "('" . $module_id . "', '" . rand(100000, 999999) . "', '" . $data['admission_number'] . "', '" . $data['roll_number'] . "', '" . $data['amount'] . "', '" . $branch_id . "', '" . $data['academic_year'] . "', '" . $data['session'] . "', '" . $data['receipt_number'] . "', '" . $data['entry_mode_number'] . "', '" . $data['date'] . "', '" . $inactive . "')";
 			}
 
 			$pdo->exec("INSERT INTO `common_fee_collection` (`module_id`, `trans_id`, `admission_number`, `roll_number`, `amount`, `branch_id`, `academic_year`, `financial_year`, `display_receipt_number`, `entry_mode`, `paid_date`, `inactive`) VALUES " . implode(',', $values));
@@ -359,10 +394,9 @@ if ($count_common_fee_collection == 0) {
 	// Common Fee Collection Headwise
 	// $count_common_fee_collection_headwise = $pdo->query("SELECT COUNT(id) AS total FROM common_fee_collection_headwise")->fetch(PDO::FETCH_ASSOC)['total'];
 	// if ($count_common_fee_collection_headwise == 0) {
-		$common_fee_collections_array = $pdo->query("SELECT CONCAT(display_receipt_number, '_', admission_number, '_', roll_number, '_', paid_date) AS unique_key, id FROM `common_fee_collection` GROUP BY display_receipt_number, admission_number, roll_number, paid_date")->fetchAll(PDO::FETCH_KEY_PAIR);
+		$common_fee_collections_array = $pdo->query("SELECT CONCAT(display_receipt_number, '_', admission_number, '_', roll_number, '_', paid_date, '_', inactive) AS unique_key, id FROM `common_fee_collection`")->fetchAll(PDO::FETCH_KEY_PAIR);
 	    $fee_types_array = $pdo->query("SELECT f_name, id FROM `fee_types` GROUP BY f_name")->fetchAll(PDO::FETCH_KEY_PAIR);
-		$common_fee_collection_details = $pdo->query("SELECT m.date, m.voucher_type, m.roll_number, m.admission_number, m.receipt_number, m.fee_head, m.paid_amount, m.adjusted_amount, m.refund_amount, m.fund_transfer_amount 
-			FROM temp_common_fee_collection m")->fetchAll(PDO::FETCH_ASSOC);
+		$common_fee_collection_details = $pdo->query("SELECT m.date, m.voucher_type, m.roll_number, m.admission_number, m.receipt_number, m.fee_head, m.paid_amount, m.adjusted_amount, m.refund_amount, m.fund_transfer_amount FROM temp_common_fee_collection m")->fetchAll(PDO::FETCH_ASSOC);
 		if (!empty($common_fee_collection_details)) {
 			$module_id = 1;
 			$branch_id = 1;
@@ -371,7 +405,23 @@ if ($count_common_fee_collection == 0) {
 	        	$values = [];
 
 	            foreach ($chunks as $data) {
-	            	$receipt_key = $data['receipt_number'] . '_' . $data['admission_number'] . '_' . $data['roll_number'] . '_' . $data['date'];
+	            	if ($data['voucher_type'] == 'RCPT') {
+	            		$inactive = 0;
+	            	} elseif ($data['voucher_type'] == 'REVRCPT') {
+	            		$inactive = 1;
+	            	} elseif ($data['voucher_type'] == 'JV') {
+	            		$inactive = 0;
+	            	} elseif ($data['voucher_type'] == 'REVJV') {
+	            		$inactive = 1;
+	            	} elseif ($data['voucher_type'] == 'PMT') {
+	            		$inactive = 0;
+	            	} elseif ($data['voucher_type'] == 'REVPMT') {
+	            		$inactive = 1;
+	            	} else {
+	            		$inactive = null;
+	            	}
+
+	            	$receipt_key = $data['receipt_number'] . '_' . $data['admission_number'] . '_' . $data['roll_number'] . '_' . $data['date'] . '_' . $inactive;
 	            	if (isset($common_fee_collections_array[$receipt_key])) {
 	            		$receipt_id = $common_fee_collections_array[$receipt_key];
 	            	} else {
@@ -384,7 +434,17 @@ if ($count_common_fee_collection == 0) {
 	            		$head_id = null;
 	            	}
 
-	            	$amount = array_sum([$data['paid_amount'], $data['adjusted_amount'], $data['refund_amount'], $data['fund_transfer_amount']]);
+	            	if (in_array($data['voucher_type'], ['RCPT', 'REVRCPT'])) {
+	 					$amount = $data['paid_amount'];
+	 				} elseif (in_array($data['voucher_type'], ['JV', 'REVJV'])) {
+	 					$amount = $data['adjusted_amount'];
+	 				} elseif (in_array($data['voucher_type'], ['PMT', 'REVPMT'])) {
+	 					$amount = $data['refund_amount'];
+	 				} elseif (in_array($data['voucher_type'], ['Fundtransfer'])) {
+	 					$amount = $data['fund_transfer_amount'];
+	 				} else {
+	 					$amount = 0;
+	 				}
 
 					$values[] = "('" . $module_id . "', '" . $receipt_id . "', '" . $head_id . "', '" . $data['fee_head'] . "', '" . $branch_id . "', '" . $amount . "')";
 	            }
